@@ -19,8 +19,7 @@ Splitter les images plus grosses en images 1024x1024
 
 - Dans les données d'entrées, certaines images sont mal labélisées (on voit qu'il manque beaucoup de bbox, à voir à quel point ça impactent)
 - Voir carrément pas alignés comme : 
-1615379843027
-1615385610373
+voir "image louche"
 
 - data augmentation, rotation, flips (attention au labels, à voir comment on gère ça, en amont ou à la volée ?)
 - Rajouter des données d'autres jeux, centrés agri : Wheat Challenge, Mango Detection par exemple
@@ -46,3 +45,16 @@ Les infos du XML correspondent pas toujours (width et height inversées, ou just
 
 Segment anything de Meta, à voir, ça a l'air chanmé.
 https://ai.facebook.com/research/publications/segment-anything/
+
+
+
+
+# Image louche
+
+J'ai viré :
+1615379843027 # bbox mal placées
+"1615401570714.jpg" #bbox mal placées
+
+
+1615385610373 # rotation facile à régler
+1645385635949 # Small but ok
