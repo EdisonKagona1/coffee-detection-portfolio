@@ -47,8 +47,6 @@ Segment anything de Meta, à voir, ça a l'air chanmé.
 https://ai.facebook.com/research/publications/segment-anything/
 
 
-
-
 # Image louche
 
 J'ai viré :
@@ -58,3 +56,20 @@ J'ai viré :
 
 1615385610373 # rotation facile à régler
 1645385635949 # Small but ok
+
+
+# Premiers résultats
+
+dans predict3/ images du modèle juste entraîné sur les 1024x1024,
+ça a l'air de bien marcher. Si l'image est flou, c'est pas dingue, mais ça a l'air de bien marcher au global
+
+Avec le modèle entrainé sur plus d'images (avec des images downsize en 640x480) ça a l'air mieux
+
+image technique : 
+55 (sombre)
+91 (super exposée)
+89 (grain rouge)
+77 (super exposé et floue bizarre)
+29 (un peu à l'ombre, en vrai, faudrait être meilleur là dessus)
+20 (ombre, pas ouf non plus)
+03 (giga floue)
