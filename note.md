@@ -73,3 +73,13 @@ image technique :
 29 (un peu à l'ombre, en vrai, faudrait être meilleur là dessus)
 20 (ombre, pas ouf non plus)
 03 (giga floue)
+
+
+
+
+# Call Romain 
+
+Comment isoler le premier plan de manière automatique 
+Crop à la main 
+
+Dans l'application : Un cropping à la main
