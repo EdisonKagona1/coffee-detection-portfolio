@@ -43,7 +43,7 @@ def display_image_and_box(img, bbox_file, name, save=False):
 
 
 
-def display_image_and_box_list(img, bbox_list, name):
+def display_image_and_box_list(img, bbox_list, name, label_present=True):
 
     height, width = img.shape[0], img.shape[1]
 
@@ -56,7 +56,13 @@ def display_image_and_box_list(img, bbox_list, name):
 
     ax2 = plt.gca()
 
-    for object_class, center_x, center_y, width_x, width_y in bbox_list:
+    for bbox in bbox_list:
+
+        if label_present:
+            object_class, center_x, center_y, width_x, width_y = bbox
+        else:
+            center_x, center_y, width_x, width_y = bbox
+
         
         anchor_x = (center_x - width_x / 2) * width
         anchor_y = (center_y - width_y / 2) * height
@@ -215,10 +221,41 @@ def listbox2str(bbox_list):
     return bbox_str
 
 
+def calculate_slice_bboxes(image_height, image_width, slice_height=768, slice_width=1024, overlap_height_ratio=0.1, overlap_width_ratio=0.1):
+    """
+    Given the height and width of an image, calculates how to divide the image into
+    overlapping slices according to the height and width provided. These slices are returned
+    as bounding boxes in xyxy format.
 
-######################## NOT USED AT THE MOMENT #########
+    :param image_height: Height of the original image.
+    :param image_width: Width of the original image.
+    :param slice_height: Height of each slice
+    :param slice_width: Width of each slice
+    :param overlap_height_ratio: Fractional overlap in height of each slice (e.g. an overlap of 0.2 for a slice of size 100 yields an overlap of 20 pixels)
+    :param overlap_width_ratio: Fractional overlap in width of each slice (e.g. an overlap of 0.2 for a slice of size 100 yields an overlap of 20 pixels)
+    :return: a list of bounding boxes in xyxy format
+    """
 
-def split_image(current_img, label_file):
+    slice_bboxes = []
+    y_max = y_min = 0
+    y_overlap = int(overlap_height_ratio * slice_height)
+    x_overlap = int(overlap_width_ratio * slice_width)
+    while y_max < image_height:
+        x_min = x_max = 0
+        y_max = y_min + slice_height
+        while x_max < image_width:
+            x_max = x_min + slice_width
+            if y_max > image_height or x_max > image_width:
+                xmax = min(image_width, x_max)
+                ymax = min(image_height, y_max)
+                xmin = max(0, xmax - slice_width)
+                ymin = max(0, ymax - slice_height)
+                slice_bboxes.append([xmin, ymin, xmax, ymax])
+            else:
+                slice_bboxes.append([x_min, y_min, x_max, y_max])
+            x_min = x_max - x_overlap
+        y_min = y_max - y_overlap
+    return slice_bboxes
     
     true_width, true_height = current_img.shape[0], current_img.shape[1]
 
