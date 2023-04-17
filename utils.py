@@ -5,13 +5,16 @@ from matplotlib import patches
 from matplotlib.patches import Rectangle
 import cv2
 
-def display_image_and_box(img, bbox_file, name, save=False):
+from matplotlib.pyplot import figure
+
+def display_image_and_box(img, bbox_file, name, save=False, display=True):
 
     height, width = img.shape[0], img.shape[1]
 
     # Display the image
+    #figure(figsize=(16, 12), dpi=160)
 
-    fig, (ax1, ax2) = plt.subplots(1, 2)
+    fig, (ax1, ax2) = plt.subplots(1, 2, dpi=160, figsize=(16, 12))
 
     ax1.imshow(img)
     ax2.imshow(img)
@@ -36,10 +39,13 @@ def display_image_and_box(img, bbox_file, name, save=False):
     plt.title(name)
 
     if save:
-        plt.savefig(f"{name}bbox_test.jpg")
-        cv2.imwrite(f"{name}original_image.jpg", img)
-
-    plt.show()
+        plt.savefig(f"ALL_LABELS/{name}")
+        #cv2.imwrite(f"{name}original_image.jpg", img)
+    
+    if display:
+        plt.show()
+    
+    plt.close()
 
 
 
