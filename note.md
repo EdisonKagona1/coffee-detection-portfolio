@@ -1,18 +1,13 @@
 # Note sur le problème de détection de grain de café
 
-## TODO urgent
-
-Lancer un premier modèle juste avec les images en 1024, voir ce que ça donne => En cours
-Splitter les images plus grosses en images 1024x1024
-(Voir plus petit en 500x500)
-
-
 ## TODO
 
-- Gérer le jeu de données de grain de café, pipé pour que ça rentre dans YOLO (s'inspirer de ce que a fait Juan Miguel, mais pas sûr que ça prenne moins de temps)
-- Faire en sorte que : ça tourne sur collab ou éventuellement Google Cloud si trop lent
-- Avoir une idée du score avec juste un COCO finetuné sur directement le café, sans data augmentation
+- Regarder si c'est possible d'obtenir un count avec deux images d'un côté et de l'autre de la branche.
+- Entrainer le modèle sur différentes tailles d'image, car les images plus petites, il galère
 - Gérer les différentes classes dans le jeu de données
+- Faire un jeu de test avec LabelImg, avoir un jeu de test qui permettent d'avoir des vrais scores:
+    - Crop de la branche considérée
+    - Un count (à la crowd counting, avec un point par cerise pour pouvoir vérifier plus facilement)
 
 
 ## Possible amélio
@@ -21,12 +16,7 @@ Splitter les images plus grosses en images 1024x1024
 - Voir carrément pas alignés comme : 
 voir "image louche"
 
-- data augmentation, rotation, flips (attention au labels, à voir comment on gère ça, en amont ou à la volée ?)
 - Rajouter des données d'autres jeux, centrés agri : Wheat Challenge, Mango Detection par exemple
-- Les images sont énormes :
-    - Option 1 : splitting et virer celles où il y a pas de label
-    - Option 2 : padding and downsizing => resoud le problème des images de taille différentes et réduit considérablement la taille des images
-                    mieux pour la batch size etc...
 
 
 # Communication sur ce qui a été fait 
@@ -34,6 +24,18 @@ voir "image louche"
 Transformation et uniformisation des images 
 261 / 438 ne sont pas en 1024 par 1024 
 Les infos du XML correspondent pas toujours (width et height inversées, ou juste à zéro)
+Gérer le jeu de données de grain de café, pipé pour que ça rentre dans YOLO (s'inspirer de ce que a fait Juan Miguel, mais pas sûr que ça prenne moins de temps)
+Lancer un premier modèle juste avec les images en 1024, voir ce que ça donne
+Splitter les images plus grosses en images 1024x1024
+(Voir plus petit en 500x500)
+Faire en sorte que : ça tourne sur collab ou éventuellement Google Cloud si trop lent
+Avoir une idée du score avec juste un COCO finetuné sur directement le café, sans data augmentation
+data augmentation, rotation, flips => Automatique dans Ultralytics, à la volée
+- Les images sont énormes :
+    - Option 1 : splitting et virer celles où il y a pas de label
+    - Option 2 : padding and downsizing => resoud le problème des images de taille différentes et réduit considérablement la taille des images
+                    mieux pour la batch size etc...
+
 
 
 # Plus long terme 

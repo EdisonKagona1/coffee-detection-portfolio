@@ -6,6 +6,7 @@ from matplotlib.patches import Rectangle
 import cv2
 
 from matplotlib.pyplot import figure
+import subprocess
 
 def display_image_and_box(img, bbox_file, name, save=False, display=True):
 
@@ -226,6 +227,15 @@ def listbox2str(bbox_list):
 
     return bbox_str
 
+def filebbox2list(label_file):
+    bboxes = []
+    labels = []
+    for bbox_str in label_file.readlines():
+        class_and_bbox = tuple(map(float, bbox_str.split(" ")))
+        labels.append([0])
+        bboxes.append(class_and_bbox[1:])
+    return bboxes, labels
+
 
 def calculate_slice_bboxes(image_height, image_width, slice_height=768, slice_width=1024, overlap_height_ratio=0.1, overlap_width_ratio=0.1):
     """
@@ -262,45 +272,60 @@ def calculate_slice_bboxes(image_height, image_width, slice_height=768, slice_wi
             x_min = x_max - x_overlap
         y_min = y_max - y_overlap
     return slice_bboxes
+
+
+def runcmd(cmd, verbose = False, *args, **kwargs):
+
+    process = subprocess.Popen(
+        cmd,
+        stdout = subprocess.PIPE,
+        stderr = subprocess.PIPE,
+        text = True,
+        shell = True
+    )
+    std_out, std_err = process.communicate()
+    if verbose:
+        print(std_out.strip(), std_err)
+    pass
     
-    true_width, true_height = current_img.shape[0], current_img.shape[1]
+    # true_width, true_height = current_img.shape[0], current_img.shape[1]
 
-    kept_bbox_count = 0
-    bboxs = []
+    # kept_bbox_count = 0
+    # bboxs = []
 
-    for bbox_str in label_file.readlines():
-        object_class, center_x, center_y, width_x, width_y = tuple(map(float, bbox_str.split(" ")))
+    # for bbox_str in label_file.readlines():
+    #     object_class, center_x, center_y, width_x, width_y = tuple(map(float, bbox_str.split(" ")))
         
-        width_x *= true_width
-        width_y *= true_height
-        center_x *= true_width
-        center_y *= true_height
-        corner_x = center_x - width_x // 2
-        corner_y = center_y - width_y // 2
+    #     width_x *= true_width
+    #     width_y *= true_height
+    #     center_x *= true_width
+    #     center_y *= true_height
+    #     corner_x = center_x - width_x // 2
+    #     corner_y = center_y - width_y // 2
 
-        bboxs.append([corner_x, corner_y, width_x, width_y])
+    #     bboxs.append([corner_x, corner_y, width_x, width_y])
 
-    if true_width > true_height :
+    # if true_width > true_height :
 
-        #(4128, 2322, 3) example
-        need_to_reduce = true_height - true_width // 2
+    #     #(4128, 2322, 3) example
+    #     need_to_reduce = true_height - true_width // 2
 
-        if need_to_reduce < 0:
-            assert NotImplementedError("Warning, image not dealt with")
+    #     if need_to_reduce < 0:
+    #         assert NotImplementedError("Warning, image not dealt with")
 
-        bboxs.sort(key=lambda x:x[1])
-        print(bboxs)
+    #     bboxs.sort(key=lambda x:x[1])
+    #     print(bboxs)
 
-        bboxs = 0 
+    #     bboxs = 0 
 
 
-        image1 = current_img[:width//2, :]
-        image2 = current_img[width//2:, :]
-    else:
-        image1 = current_img[:, :height//2]
-        image2 = current_img[:, height//2:]
+    #     image1 = current_img[:width//2, :]
+    #     image2 = current_img[width//2:, :]
+    # else:
+    #     image1 = current_img[:, :height//2]
+    #     image2 = current_img[:, height//2:]
         
 
-        #fig, (ax1, ax2) = plt.subplots(1, 2)
-        #ax1.imshow(image1)
-        #ax2.imshow(image2)
+    #     #fig, (ax1, ax2) = plt.subplots(1, 2)
+    #     #ax1.imshow(image1)
+    #     #ax2.imshow(image2)
