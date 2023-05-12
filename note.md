@@ -1,9 +1,16 @@
 # Note sur le problème de détection de grain de café
 
+# A lancer
+
+- Modèle avec les différentes classes
+- Rajouter unsure et voir
+- Filtre à la mano les mauvais labels
+
+
 ## TODO
 
+
 - Regarder si c'est possible d'obtenir un count avec deux images d'un côté et de l'autre de la branche.
-- Entrainer le modèle sur différentes tailles d'image, car les images plus petites, il galère
 - Gérer les différentes classes dans le jeu de données
 - Faire un jeu de test avec LabelImg, avoir un jeu de test qui permettent d'avoir des vrais scores:
     - Crop de la branche considérée
@@ -86,3 +93,14 @@ Comment isoler le premier plan de manière automatique
 Crop à la main 
 
 Dans l'application : Un cropping à la main 
+
+
+# check image post process
+
+1615562134510  # Il a annoté l'ombre du soleil ou des conneries comme ça
+1615400791606 # Feuille ultra eloignée annotée ..
+1615300838785 # Feuille
+
+# Count chelou
+
+1682086833877.jpg 36 count, pred : 75

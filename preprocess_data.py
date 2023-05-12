@@ -14,6 +14,7 @@ import albumentations as A
 
 import yaml
 import fnmatch
+import json
 
 
 def coffee_data_convert_xml_to_coco(source='coffee_raw', output_path='coffee_raw/coco_labels'):
@@ -99,7 +100,53 @@ def coffee_data_convert_xml_to_coco(source='coffee_raw', output_path='coffee_raw
     print(f"Number of images per size {total_images}")
 
 
-def preprocess_image(raw_images_dir="coffee_raw/Imagenes/", raw_label_dir="coffee_raw/coco_labels", output_path="coffee_coco", preprocess='both', downsize=(768,1024)):
+def adapt_classes(labels_path, classes_json_path, convert_all=True, to_ignore=None):
+
+    annotations = json.load(open(classes_json_path, 'r'))
+    annotations = [i["name"] for i in annotations["categories"]]
+
+    old_annotations = annotations.copy()
+
+    if not convert_all and to_ignore is None:
+        return
+    
+    if to_ignore is not None:
+        for annotation in to_ignore:
+            index_to_remove = annotations.index(annotation)
+            annotations.pop(index_to_remove)
+    else:
+        to_ignore = []
+
+    anot2index = dict([(key, value) for key, value in enumerate(annotations)])
+
+    for bbox_txt in os.listdir(labels_path):
+
+        bbox_full_path = os.path.join(labels_path, bbox_txt)
+        bbox_file = open(bbox_full_path, 'r')
+        new_bbox_str = ""
+
+        for bbox in bbox_file.readlines():
+            bbox_list = bbox[:-1].split(" ")
+            label = bbox_list[0]
+
+            if label not in to_ignore:
+                if convert_all: 
+                    bbox_list[0] = str(0)
+                else:
+                    bbox_list[0] = anot2index[old_annotations[bbox_list[0]]] 
+
+                new_bbox_str += " ".join(bbox_list) + "\n"
+
+        bbox_file.close()
+        new_bbox_file = open(bbox_full_path, 'w')
+        new_bbox_file.write(new_bbox_str)
+        new_bbox_file.close()
+
+    return
+
+
+
+def preprocess_image(raw_images_dir, raw_label_dir, output_path="coffee_coco", preprocess='both', downsize=(768,1024)):
     """
     Preprocess all images located in raw_images_dir
     Two options for larger images are : 
@@ -118,21 +165,27 @@ def preprocess_image(raw_images_dir="coffee_raw/Imagenes/", raw_label_dir="coffe
         # Create a new directory because it does not exist
         os.makedirs(output_path)
 
-    problematic_images = {"1615401570714","1615379843027"} # Labels are fucked up for those, ignore them
+    problematic_images = {"1615315525581"} # Labels are fucked up for those, ignore them
 
     for i, image_path in enumerate(os.listdir(raw_images_dir)):
 
         ignore = False # Flag used to ignore padding if the crop already contains all the boxes
 
         if image_path[:-4] in problematic_images:
-            continue
+           continue
         
         # Open image
         image_full_path = path.join(raw_images_dir, image_path)
         current_img = cv2.imread(image_full_path)
         img_shape = current_img.shape
-        if image_path[:-4] == "1615385610373": # Don't know this one specifically had problem in labels, but whatever
-            current_img = cv2.rotate(current_img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        
+        ####### WEIRD CASES ####################################
+        if image_path[:-4] == "1615385610373": 
+          current_img = cv2.rotate(current_img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+        if image_path[:-4] == "1615581114578": 
+          current_img = cv2.rotate(current_img, cv2.ROTATE_180)
+        ###########################################
 
         # Load bboxes
         label_path = path.join(raw_label_dir, image_path)[:-3] + "txt"
@@ -142,11 +195,17 @@ def preprocess_image(raw_images_dir="coffee_raw/Imagenes/", raw_label_dir="coffe
             label_file = open(label_path)
             bboxes, labels = filebbox2list(label_file)
             total_bbox_full = len(bboxes)
+
+            if total_bbox_full == 0:
+                print("No bbox found on ", image_path)
+                continue
                 
             subimgs = calculate_slice_bboxes(image_width=img_shape[1], image_height=img_shape[0],
-                                            slice_width=768, slice_height=1024, overlap_height_ratio=0.05, overlap_width_ratio=0.05)
+                                             slice_width=768, slice_height=1024, overlap_height_ratio=0.05, overlap_width_ratio=0.05)
 
             n_crop = 0
+            invalid_bbox = False
+
             for subimg in subimgs:
                 total_crop += 1
                 crop_transform = A.Compose(
@@ -157,10 +216,14 @@ def preprocess_image(raw_images_dir="coffee_raw/Imagenes/", raw_label_dir="coffe
                                              min_area=0.1)
                 )
 
-                transformed = crop_transform(image=current_img, bboxes=bboxes, labels=labels)
+                try:
+                    transformed = crop_transform(image=current_img, bboxes=bboxes, labels=labels)
+                except ValueError:
+                    invalid_bbox = True
+                    break
 
-                # Crop that contains 2 box or less, remove
-                if len(transformed['bboxes']) > 2:
+                # Crop that contains no box or less, remove
+                if len(transformed['bboxes']) > 0:
 
                     img_new_path = image_path[:-4] + f"c{n_crop}" + ".jpg"
                     img_new_path = path.join(output_path, img_new_path)
@@ -186,7 +249,12 @@ def preprocess_image(raw_images_dir="coffee_raw/Imagenes/", raw_label_dir="coffe
                         ignore = True
                         break
 
+            if invalid_bbox:
+                print("Problem in bbox value, contains a value bigger than 1")
+                continue
+            
             assert n_crop > 0, "problem no bbox in this image crop"
+
 
         
         # Pad and dowsize
@@ -207,7 +275,7 @@ def preprocess_image(raw_images_dir="coffee_raw/Imagenes/", raw_label_dir="coffe
     print(f"Total images reformat : {count_image}")
 
 
-def split_train_val(datadir, subname, proportion_trainval=0.85):
+def split_train_val(datadir, proportion_trainval=0.85):
     """
     At the moment, no split are predefinied, so we split by hand 
     proportion_trainval defines the proportion of images going to the train set (around 80-85% usually)
@@ -223,6 +291,7 @@ def split_train_val(datadir, subname, proportion_trainval=0.85):
     n_train = int(count_image * proportion_trainval)
 
     count_copied_image = 0
+    subname = datadir
 
     train_dir = f"datasets/{subname}/train"
     val_dir = f"datasets/{subname}/val"
@@ -267,13 +336,17 @@ if __name__ == "__main__":
 
     import argparse
 
-    coffee_data_convert_xml_to_coco()
+    #coffee_data_convert_xml_to_coco()
 
-    preprocess_image(output_path="coffee_coco1024", downsize=(768,1024))
-    preprocess_image(output_path="coffee_coco640", downsize=(480,640))
+    sh.rmtree("croppieV2/labels")
+    sh.copytree("/home/mseurin/Téléchargements/labels/", "croppieV2/labels")
 
-    split_train_val(datadir="coffee_coco640", subname="coffee640")
-    split_train_val(datadir="coffee_coco1024", subname="coffee1024")
+    #preprocess_image(raw_images_dir="croppieV2/images", raw_label_dir="croppieV2/labels", output_path="coffee_coco1024", downsize=(768,1024))
+    adapt_classes(labels_path="croppieV2/labels", classes_json_path="croppieV2/notes.json", convert_all=True, to_ignore=["low_visibility_unsure"])
+    preprocess_image(raw_images_dir="croppieV2/images", raw_label_dir="croppieV2/labels", output_path="coffee_coco640", downsize=(480,640))
+
+    split_train_val(datadir="coffee_coco640")
+    #split_train_val(datadir="coffee_coco1024", subname="coffee1024")
 
 
     wheet_yaml640 = dict(
@@ -287,12 +360,12 @@ if __name__ == "__main__":
         yaml.dump(wheet_yaml640, outfile, default_flow_style=True)
 
 
-    wheet_yaml1024 = dict(
-    train ='coffee1024/train',
-    val ='coffee1024/val',
-    nc =1,
-    names =["cafe verde"]
-    )
+    # wheet_yaml1024 = dict(
+    # train ='coffee1024/train',
+    # val ='coffee1024/val',
+    # nc =1,
+    # names =["cafe verde"]
+    # )
 
-    with open('coffee1024.yaml', 'w') as outfile:
-        yaml.dump(wheet_yaml1024, outfile, default_flow_style=True)
+    # with open('coffee1024.yaml', 'w') as outfile:
+    #     yaml.dump(wheet_yaml1024, outfile, default_flow_style=True)

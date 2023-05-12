@@ -46,6 +46,7 @@ def display_image_and_box(img, bbox_file, name, save=False, display=True):
     if display:
         plt.show()
     
+    fig.clear()
     plt.close()
 
 
@@ -117,8 +118,14 @@ def pad_image_labels(current_img, label_file):
             padded_image = current_img
 
         else:           # Pad Width
-            print(true_width, true_height, ratio)
-            raise NotImplementedError("Fuck those images")
+            new_width = int(true_height * 4/3)
+            color = (0,0,0)
+            padded_image = np.full((new_width, true_height, 3), color, dtype=np.uint8)
+
+            padded_image[:true_width, :] = current_img
+
+            whoisbeingpad = "width"
+            modify_bbox = True
         
     elif true_width < true_height:
         ratio = true_height / true_width
@@ -132,9 +139,16 @@ def pad_image_labels(current_img, label_file):
 
             whoisbeingpad = "width"
             modify_bbox = True
-        elif ratio < 4/3:
-            print("ratio < 4/3")
-            raise NotImplementedError("Fuck those images")
+
+        elif ratio < 4/3: # Pad Height
+            new_height = int(true_width * 4/3)
+            color = (0,0,0)
+            padded_image = np.full((true_width, new_height, 3), color, dtype=np.uint8)
+
+            padded_image[:, :true_height] = current_img
+
+            whoisbeingpad = "height"
+            modify_bbox = True
         else:
             padded_image = current_img
 
