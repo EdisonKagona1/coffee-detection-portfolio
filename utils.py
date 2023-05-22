@@ -8,6 +8,30 @@ import cv2
 from matplotlib.pyplot import figure
 import subprocess
 
+def save_prediction_and_box(img_full, prediction, true_count, name):
+    all_boxes = prediction[0].boxes.cpu()
+
+    esti_count = len(all_boxes)
+
+    fig, ax = plt.subplots()
+    fig.set_size_inches(18.5, 10.5, forward=True)
+    fig.set_dpi(100)
+
+    rgb = cv2.cvtColor(img_full, cv2.COLOR_BGR2RGB)
+    ax.imshow(rgb)
+    for box in all_boxes:
+        xb, yb, xe, ye, prob, _ = box.data[0]
+        #xb, yb, xe, ye = int(xb), int(yb), int(xe), int(ye)
+
+        rect = patches.Rectangle((xb, yb), xe-xb, ye-yb, linewidth=0.5, edgecolor='r', facecolor='none')
+        ax.add_patch(rect)
+
+    ax.axis('off')
+    ax.set_title(f"true_count {true_count} esti_count {esti_count}")
+    plt.tight_layout()
+    plt.savefig(f"ALL_PREDICTIONS/{name}")
+    plt.close()
+
 def display_image_and_box(img, bbox_file, name, save=False, display=True):
 
     height, width = img.shape[0], img.shape[1]
@@ -48,7 +72,6 @@ def display_image_and_box(img, bbox_file, name, save=False, display=True):
     
     fig.clear()
     plt.close()
-
 
 
 def display_image_and_box_list(img, bbox_list, name, label_present=True):

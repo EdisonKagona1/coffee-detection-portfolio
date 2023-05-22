@@ -110,14 +110,17 @@ def adapt_classes(labels_path, classes_json_path, convert_all=True, to_ignore=No
     if not convert_all and to_ignore is None:
         return
     
+    indexes_to_remove = []
     if to_ignore is not None:
         for annotation in to_ignore:
             index_to_remove = annotations.index(annotation)
             annotations.pop(index_to_remove)
+            indexes_to_remove.append(str(index_to_remove))
     else:
         to_ignore = []
 
-    anot2index = dict([(key, value) for key, value in enumerate(annotations)])
+    anot2index = dict([(value, str(key)) for key, value in enumerate(annotations)])
+    print(anot2index, old_annotations)
 
     for bbox_txt in os.listdir(labels_path):
 
@@ -129,11 +132,11 @@ def adapt_classes(labels_path, classes_json_path, convert_all=True, to_ignore=No
             bbox_list = bbox[:-1].split(" ")
             label = bbox_list[0]
 
-            if label not in to_ignore:
+            if label not in indexes_to_remove:
                 if convert_all: 
                     bbox_list[0] = str(0)
                 else:
-                    bbox_list[0] = anot2index[old_annotations[bbox_list[0]]] 
+                    bbox_list[0] = anot2index[old_annotations[int(bbox_list[0])]] 
 
                 new_bbox_str += " ".join(bbox_list) + "\n"
 
@@ -339,33 +342,24 @@ if __name__ == "__main__":
     #coffee_data_convert_xml_to_coco()
 
     sh.rmtree("croppieV2/labels")
-    sh.copytree("/home/mseurin/Téléchargements/labels/", "croppieV2/labels")
+    sh.copytree("../../Data/labels", "croppieV2/labels")
 
-    #preprocess_image(raw_images_dir="croppieV2/images", raw_label_dir="croppieV2/labels", output_path="coffee_coco1024", downsize=(768,1024))
-    adapt_classes(labels_path="croppieV2/labels", classes_json_path="croppieV2/notes.json", convert_all=True, to_ignore=["low_visibility_unsure"])
-    preprocess_image(raw_images_dir="croppieV2/images", raw_label_dir="croppieV2/labels", output_path="coffee_coco640", downsize=(480,640))
+    ################# Multi class detection ######################
 
-    split_train_val(datadir="coffee_coco640")
+    dataset_name = "coffee_coco640multi"
+
+    adapt_classes(labels_path="croppieV2/labels", classes_json_path="croppieV2/notes.json", convert_all=False, to_ignore=["low_visibility_unsure"])
+    preprocess_image(raw_images_dir="croppieV2/images", raw_label_dir="croppieV2/labels", output_path=dataset_name, downsize=(480,640))
+
+    split_train_val(datadir=dataset_name)
     #split_train_val(datadir="coffee_coco1024", subname="coffee1024")
 
-
     wheet_yaml640 = dict(
-    train ='coffee640/train',
-    val ='coffee640/val',
-    nc =1,
-    names =["cafe verde"]
+    train =f'{dataset_name}/train',
+    val =f'{dataset_name}/val',
+    nc=4,
+    names =["dark_brown", "green_cherry", "red_cherry", "yellow_cherry"]
     )
 
-    with open('coffee640.yaml', 'w') as outfile:
+    with open(f'{dataset_name}.yaml', 'w') as outfile:
         yaml.dump(wheet_yaml640, outfile, default_flow_style=True)
-
-
-    # wheet_yaml1024 = dict(
-    # train ='coffee1024/train',
-    # val ='coffee1024/val',
-    # nc =1,
-    # names =["cafe verde"]
-    # )
-
-    # with open('coffee1024.yaml', 'w') as outfile:
-    #     yaml.dump(wheet_yaml1024, outfile, default_flow_style=True)
