@@ -2,8 +2,8 @@
 
 # A lancer
 
-- Modèle avec les différentes classes
-- Rajouter unsure et voir
+- Diminuer le IOU
+- Lancer Multi avec unsure
 - Filtre à la mano les mauvais labels
 
 
@@ -104,3 +104,9 @@ Dans l'application : Un cropping à la main
 # Count chelou
 
 1682086833877.jpg 36 count, pred : 75
+
+# Info on dataset
+
+Yield vary from year to year
+Organic vs Fertilizers
+Weathers data super important
