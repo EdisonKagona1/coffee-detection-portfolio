@@ -1,294 +1,169 @@
-import matplotlib.pyplot as plt
-import numpy as np
+"""
+A collection of utility functions for the Coffee Bean Detection project.
 
-from matplotlib import patches
-from matplotlib.patches import Rectangle
+This module provides a robust toolkit for common tasks throughout the project,
+including data visualization, coordinate system transformations, and file
+manipulation. The functions here are designed to be reusable and are imported
+by the main scripts (`visualize_data.py`, `prepare_dataset.py`, etc.).
+"""
+import os
 import cv2
-
-from matplotlib.pyplot import figure
+import json
+import shutil
+import fnmatch
 import subprocess
+import numpy as np
+import xml.etree.ElementTree as ET
+import matplotlib.pyplot as plt
+from matplotlib import patches
+from typing import List, Tuple, Any, TextIO, Dict
 
-def save_prediction_and_box(img_full, prediction, true_count, name):
-    all_boxes = prediction[0].boxes.cpu()
+# Define a type alias for a bounding box for improved code clarity
+BoundingBox = List[float]
 
-    esti_count = len(all_boxes)
 
-    fig, ax = plt.subplots()
-    fig.set_size_inches(18.5, 10.5, forward=True)
-    fig.set_dpi(100)
+def display_image_and_box(img: np.ndarray, bbox_file: TextIO, name: str, save: bool = False, display: bool = True) -> None:
+    """
+    Displays an image side-by-side with a version that has bounding boxes drawn on it.
+    Reads bounding boxes from a YOLO-format .txt file.
 
-    rgb = cv2.cvtColor(img_full, cv2.COLOR_BGR2RGB)
-    ax.imshow(rgb)
-    for box in all_boxes:
-        xb, yb, xe, ye, prob, _ = box.data[0]
-        #xb, yb, xe, ye = int(xb), int(yb), int(xe), int(ye)
+    Args:
+        img (np.ndarray): The image (in BGR format) to display.
+        bbox_file (TextIO): An open file-like object containing YOLO format labels.
+        name (str): The name of the image, used for the plot title and saving.
+        save (bool): If True, saves the visualization to the 'outputs/label_verification' directory.
+        display (bool): If True, shows the plot on screen.
+    """
+    height, width, _ = img.shape
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        rect = patches.Rectangle((xb, yb), xe-xb, ye-yb, linewidth=0.5, edgecolor='r', facecolor='none')
-        ax.add_patch(rect)
+    fig, (ax1, ax2) = plt.subplots(1, 2, dpi=160, figsize=(16, 8))
+    fig.suptitle(f"Label Verification: {name}", fontsize=16)
 
-    ax.axis('off')
-    ax.set_title(f"true_count {true_count} esti_count {esti_count}")
-    plt.tight_layout()
-    plt.savefig(f"ALL_PREDICTIONS/{name}")
-    plt.close()
+    ax1.imshow(img_rgb)
+    ax1.set_title("Original Image")
+    ax1.axis('off')
 
-def display_image_and_box(img, bbox_file, name, save=False, display=True):
-
-    height, width = img.shape[0], img.shape[1]
-
-    # Display the image
-    #figure(figsize=(16, 12), dpi=160)
-
-    fig, (ax1, ax2) = plt.subplots(1, 2, dpi=160, figsize=(16, 12))
-
-    ax1.imshow(img)
-    ax2.imshow(img)
-
-    ax2 = plt.gca()
+    ax2.imshow(img_rgb)
+    ax2.set_title("Image with Ground-Truth Boxes")
+    ax2.axis('off')
 
     for bbox_str in bbox_file.readlines():
-        object_class, center_x, center_y, width_x, width_y = tuple(map(float, bbox_str.split(" ")))
-        anchor_x = (center_x - width_x / 2) * width
-        anchor_y = (center_y - width_y / 2) * height
-        width_x *= width
-        width_y *= height
+        try:
+            _, center_x, center_y, width_x, width_y = map(float, bbox_str.split(" "))
+            
+            # Convert YOLO format (normalized, center-based) to pixel coordinates
+            box_width = width_x * width
+            box_height = width_y * height
+            anchor_x = (center_x * width) - (box_width / 2)
+            anchor_y = (center_y * height) - (box_height / 2)
 
-        ax2.add_patch(
-            patches.Rectangle(
-                (anchor_x, anchor_y),
-                width_x,
-                width_y,
-                fill=True
-            ) ) 
-    
-    plt.title(name)
+            rect = patches.Rectangle(
+                (anchor_x, anchor_y), box_width, box_height,
+                linewidth=1.5, edgecolor='lime', facecolor='none'
+            )
+            ax2.add_patch(rect)
+        except ValueError:
+            print(f"Warning: Skipping malformed line in label file for {name}: '{bbox_str.strip()}'")
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout to make room for suptitle
 
     if save:
-        plt.savefig(f"ALL_LABELS/{name}")
-        #cv2.imwrite(f"{name}original_image.jpg", img)
+        save_dir = os.path.join("outputs", "label_verification")
+        os.makedirs(save_dir, exist_ok=True)
+        plt.savefig(os.path.join(save_dir, name))
     
     if display:
         plt.show()
     
-    fig.clear()
-    plt.close()
+    plt.close(fig) # Important for running in loops to prevent memory leaks
 
 
-def display_image_and_box_list(img, bbox_list, name, label_present=True):
+def save_prediction_image(img_full: np.ndarray, prediction: Any, save_path: str, true_count: int = None) -> None:
+    """
+    Saves an image with predicted bounding boxes and optional counts drawn on it.
 
-    height, width = img.shape[0], img.shape[1]
+    Args:
+        img_full (np.ndarray): The full image (in BGR format) to draw on.
+        prediction (Any): The prediction object from a YOLO model.
+        save_path (str): The full path, including filename, where the image will be saved.
+        true_count (int, optional): The ground-truth count of objects for comparison.
+    """
+    all_boxes = prediction[0].boxes.cpu()
+    esti_count = len(all_boxes)
 
-    # Display the image
+    fig, ax = plt.subplots(figsize=(18.5, 10.5), dpi=100)
 
-    fig, (ax1, ax2) = plt.subplots(1, 2)
+    rgb_img = cv2.cvtColor(img_full, cv2.COLOR_BGR2RGB)
+    ax.imshow(rgb_img)
 
-    ax1.imshow(img)
-    ax2.imshow(img)
+    for box in all_boxes:
+        xb, yb, xe, ye, _, _ = box.data[0]
+        rect = patches.Rectangle(
+            (xb, yb), xe - xb, ye - yb,
+            linewidth=1, edgecolor='r', facecolor='none'
+        )
+        ax.add_patch(rect)
 
-    ax2 = plt.gca()
-
-    for bbox in bbox_list:
-
-        if label_present:
-            object_class, center_x, center_y, width_x, width_y = bbox
-        else:
-            center_x, center_y, width_x, width_y = bbox
-
+    ax.axis('off')
+    if true_count is not None:
+        ax.set_title(f"Ground Truth Count: {true_count} | Estimated Count: {esti_count}", fontsize=16)
+    else:
+        ax.set_title(f"Estimated Count: {esti_count}", fontsize=16)
         
-        anchor_x = (center_x - width_x / 2) * width
-        anchor_y = (center_y - width_y / 2) * height
-        width_x *= width
-        width_y *= height
-
-        ax2.add_patch(
-            patches.Rectangle(
-                (anchor_x, anchor_y),
-                width_x,
-                width_y,
-                fill=True
-            ) ) 
-    
-    plt.title(name)
-    #plt.savefig(f"testout_{name}.png")
-    plt.show()
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close(fig)
 
 
-def pad_image_labels(current_img, label_file):
-    
-    #print(current_img.shape)
-    true_width, true_height = current_img.shape[0], current_img.shape[1]
+def xml_to_yolo(annotations: List[Any], img_width: int, img_height: int) -> str:
+    """
+    Converts a list of XML annotations to a single string in YOLO format.
 
-    modify_bbox = False
+    Args:
+        annotations (List[Any]): A list of annotation objects from an ElementTree parse.
+        img_width (int): The width of the image for normalization.
+        img_height (int): The height of the image for normalization.
 
-    if true_width > true_height:
-        ratio = true_width / true_height
-        
-        if ratio > 4/3: # Pad Height
-            new_height = int(true_width * 0.75)
-            color = (0,0,0)
-            padded_image = np.full((true_width, new_height, 3), color, dtype=np.uint8)
-
-            padded_image[:, :true_height] = current_img
-
-            whoisbeingpad = "height"
-            modify_bbox = True
-
-            #fig, (ax1, ax2) = plt.subplots(1, 2)
-            #ax1.imshow(current_img)
-            #ax2.imshow(result)
-
-        elif ratio == 4/3:
-            padded_image = current_img
-
-        else:           # Pad Width
-            new_width = int(true_height * 4/3)
-            color = (0,0,0)
-            padded_image = np.full((new_width, true_height, 3), color, dtype=np.uint8)
-
-            padded_image[:true_width, :] = current_img
-
-            whoisbeingpad = "width"
-            modify_bbox = True
-        
-    elif true_width < true_height:
-        ratio = true_height / true_width
-
-        if ratio > 4/3:  #Pad width
-            new_width = int(true_height * 0.75)
-            color = (0,0,0)
-            padded_image = np.full((new_width, true_height, 3), color, dtype=np.uint8)
-
-            padded_image[:true_width, :] = current_img
-
-            whoisbeingpad = "width"
-            modify_bbox = True
-
-        elif ratio < 4/3: # Pad Height
-            new_height = int(true_width * 4/3)
-            color = (0,0,0)
-            padded_image = np.full((true_width, new_height, 3), color, dtype=np.uint8)
-
-            padded_image[:, :true_height] = current_img
-
-            whoisbeingpad = "height"
-            modify_bbox = True
-        else:
-            padded_image = current_img
-
-
-    elif true_width == true_height:
-
-        new_width = int(true_width / 0.75)
-        color = (0,0,0)
-        padded_image = np.full((new_width, true_height, 3), color, dtype=np.uint8)
-
-        padded_image[:true_width, :] = current_img
-        
-        whoisbeingpad = "width"
-        modify_bbox = True
-
-        #fig, (ax1, ax2) = plt.subplots(1, 2)
-        #ax1.imshow(current_img)
-        #ax2.imshow(result)
-
-    new_bboxes = []
-    for bbox_str in label_file.readlines():
-        object_class, center_x, center_y, width_x, width_y = tuple(map(float, bbox_str.split(" ")))
-
-        if modify_bbox:
-            if whoisbeingpad == "height":
-                oldnew_ratio = new_height / true_height
-                center_x /= oldnew_ratio
-                width_x /= oldnew_ratio
-
-            else:
-                oldnew_ratio = new_width / true_width
-                center_y /= oldnew_ratio
-                width_y /= oldnew_ratio
-
-        new_bboxes.append([object_class, center_x, center_y, width_x, width_y])
-
-    return padded_image, new_bboxes
-
-
-def xmlbox2str(annotations, img_width, img_height):
-
-    str_full = ""
-
-    # Reformat each bounding box to one info per line
+    Returns:
+        str: A multi-line string with one YOLO-formatted bounding box per line.
+    """
+    yolo_formatted_str = ""
     for annotation in annotations:
-
-        # Retrieve coordinates
         bndbox = annotation.find("bndbox")
         xmin, ymin = int(bndbox.find("xmin").text), int(bndbox.find("ymin").text)
         xmax, ymax = int(bndbox.find("xmax").text), int(bndbox.find("ymax").text)
 
+        dw, dh = 1.0 / img_width, 1.0 / img_height
+        center_x, center_y = (xmin + xmax) / 2.0, (ymin + ymax) / 2.0
+        width_x, width_y = float(xmax - xmin), float(ymax - ymin)
 
-        # Convert [rectangle dimensions] to [center and rectangle width and height] in percentage of the total image
-        width_x, width_y = xmax - xmin, ymax - ymin
-        center_x, center_y = (xmax - xmin) / 2 + xmin, (ymax - ymin) / 2 + ymin
+        norm_center_x, norm_center_y = center_x * dw, center_y * dh
+        norm_width_x, norm_width_y = width_x * dw, width_y * dh
 
-        # Retrieve class
-        object_class = annotation.find("name").text
+        class_index = 0 # Assuming single-class problem for this direct conversion
+        yolo_formatted_str += f"{class_index} {norm_center_x} {norm_center_y} {norm_width_x} {norm_width_y}\n"
 
-        # Create new index if the class does not exist, allow flexible number of cafe class in training
-        ################## NOT AVAILABLE AT THE MOMENT ##########
-        #########################################################
-        #if object_class in class_to_index:
-        #    index = class_to_index[object_class]
-        #else:
-        #    index = len(class_to_index)
-        #    class_to_index[object_class] = index
-
-        # Only one class at the moment
-        index = 0
-
-        str_full += " ".join(map(str, [index,
-                                        center_x / img_width, center_y / img_height,
-                                        width_x / img_width, width_y / img_height]))
-        str_full += "\n"
-
-    return str_full
+    return yolo_formatted_str
 
 
-def listbox2str(bbox_list):
-    bbox_str = ""
-
-    # oneliner challenge
-    for bbox in bbox_list:
-        bbox_str += " ".join(map(str, bbox))
-        bbox_str += "\n"
-
-    # oneliner challenge
-    # bbox_str = "\n".join([" ".join(map(str, bbox)) for bbox in bbox_list])
-
-    return bbox_str
-
-def filebbox2list(label_file):
-    bboxes = []
-    labels = []
-    for bbox_str in label_file.readlines():
-        class_and_bbox = tuple(map(float, bbox_str.split(" ")))
-        labels.append([0])
-        bboxes.append(class_and_bbox[1:])
-    return bboxes, labels
-
-
-def calculate_slice_bboxes(image_height, image_width, slice_height=768, slice_width=1024, overlap_height_ratio=0.1, overlap_width_ratio=0.1):
+def calculate_slice_bboxes(image_height: int, image_width: int, slice_height: int, slice_width: int,
+                           overlap_height_ratio: float, overlap_width_ratio: float) -> List[List[int]]:
     """
-    Given the height and width of an image, calculates how to divide the image into
-    overlapping slices according to the height and width provided. These slices are returned
-    as bounding boxes in xyxy format.
+    Calculates overlapping slice coordinates for a large image. This is a core
+    component of the advanced preprocessing strategy.
 
-    :param image_height: Height of the original image.
-    :param image_width: Width of the original image.
-    :param slice_height: Height of each slice
-    :param slice_width: Width of each slice
-    :param overlap_height_ratio: Fractional overlap in height of each slice (e.g. an overlap of 0.2 for a slice of size 100 yields an overlap of 20 pixels)
-    :param overlap_width_ratio: Fractional overlap in width of each slice (e.g. an overlap of 0.2 for a slice of size 100 yields an overlap of 20 pixels)
-    :return: a list of bounding boxes in xyxy format
+    Args:
+        image_height: Height of the original image.
+        image_width: Width of the original image.
+        slice_height: Height of each slice.
+        slice_width: Width of each slice.
+        overlap_height_ratio: Fractional overlap in height of each slice.
+        overlap_width_ratio: Fractional overlap in width of each slice.
+
+    Returns:
+        A list of slice bounding boxes in [xmin, ymin, xmax, ymax] format.
     """
-
     slice_bboxes = []
     y_max = y_min = 0
     y_overlap = int(overlap_height_ratio * slice_height)
@@ -311,58 +186,27 @@ def calculate_slice_bboxes(image_height, image_width, slice_height=768, slice_wi
     return slice_bboxes
 
 
-def runcmd(cmd, verbose = False, *args, **kwargs):
+def run_command(cmd: str, verbose: bool = False) -> None:
+    """
+    Runs a shell command using subprocess, capturing output.
 
+    Args:
+        cmd (str): The command to run as a single string.
+        verbose (bool): If True, prints the command's stdout and stderr.
+    """
+    print(f"Executing command: {cmd}")
     process = subprocess.Popen(
         cmd,
-        stdout = subprocess.PIPE,
-        stderr = subprocess.PIPE,
-        text = True,
-        shell = True
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        shell=True,
+        encoding='utf-8',
+        errors='ignore'
     )
     std_out, std_err = process.communicate()
     if verbose:
-        print(std_out.strip(), std_err)
-    pass
-    
-    # true_width, true_height = current_img.shape[0], current_img.shape[1]
-
-    # kept_bbox_count = 0
-    # bboxs = []
-
-    # for bbox_str in label_file.readlines():
-    #     object_class, center_x, center_y, width_x, width_y = tuple(map(float, bbox_str.split(" ")))
-        
-    #     width_x *= true_width
-    #     width_y *= true_height
-    #     center_x *= true_width
-    #     center_y *= true_height
-    #     corner_x = center_x - width_x // 2
-    #     corner_y = center_y - width_y // 2
-
-    #     bboxs.append([corner_x, corner_y, width_x, width_y])
-
-    # if true_width > true_height :
-
-    #     #(4128, 2322, 3) example
-    #     need_to_reduce = true_height - true_width // 2
-
-    #     if need_to_reduce < 0:
-    #         assert NotImplementedError("Warning, image not dealt with")
-
-    #     bboxs.sort(key=lambda x:x[1])
-    #     print(bboxs)
-
-    #     bboxs = 0 
-
-
-    #     image1 = current_img[:width//2, :]
-    #     image2 = current_img[width//2:, :]
-    # else:
-    #     image1 = current_img[:, :height//2]
-    #     image2 = current_img[:, height//2:]
-        
-
-    #     #fig, (ax1, ax2) = plt.subplots(1, 2)
-    #     #ax1.imshow(image1)
-    #     #ax2.imshow(image2)
+        if std_out:
+            print(f"STDOUT: {std_out.strip()}")
+        if std_err:
+            print(f"STDERR: {std_err.strip()}")
