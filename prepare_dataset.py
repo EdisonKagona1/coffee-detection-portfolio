@@ -31,6 +31,7 @@ from typing import List, Dict
 import albumentations as A
 import yaml
 from tqdm import tqdm
+import random 
 
 # Import the utility functions we created
 from utils import xml_to_yolo, calculate_slice_bboxes
@@ -161,7 +162,7 @@ def create_train_val_split(source_dir: Path, proportion_train: float = 0.85) -> 
     (val_dir / "labels").mkdir(parents=True, exist_ok=True)
 
     image_files = sorted(list(source_dir.glob("*.jpg")))
-    shutil.os.random.shuffle(image_files)
+    random.shuffle(image_files)
 
     split_idx = int(len(image_files) * proportion_train)
     train_files = image_files[:split_idx]
