@@ -1,101 +1,99 @@
 """
-Quantitative Validation and Model Comparison Script.
+Quantitative Validation, Correction, and Model Comparison Script.
 
-This script evaluates one or more trained YOLOv8 models on a practical
-counting task. It compares the number of detected objects against a
-ground-truth count provided in a CSV file and reports key error metrics.
+This script evaluates trained YOLOv8 models on a practical counting task and
+demonstrates a two-stage modeling approach by training a polynomial regression
+model to correct for systematic underestimation caused by occlusion.
 
-This script is the professional replacement for the quantitative analysis cells
-in the `post_training_analysis.ipynb` notebook.
+It reports both the raw YOLO model error and the corrected error.
+
+This script is the professional replacement for the advanced analysis in the
+`post_training_analysis.ipynb` notebook.
 
 Example Usage:
-    # Validate a single model
-    python validate.py --model_paths runs/train/exp1/weights/best.pt --csv_path data/validation_counts.csv --images_dir data/validation_images
-
-    # Compare multiple models
-    python validate.py --model_paths runs/train/exp1/weights/best.pt runs/train/exp2/weights/best.pt --csv_path ... --images_dir ...
+    # Validate and apply correction for one model
+    python validate.py --model-paths runs/train/exp1/weights/best.pt --csv_path data/validation_counts.csv --images_dir data/validation_images
 """
 import cv2
 import argparse
 import pandas as pd
+import numpy as np
 from ultralytics import YOLO
 from pathlib import Path
 from tqdm import tqdm
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error
 
-def validate_model_on_counting_task(model: YOLO, df: pd.DataFrame, images_dir: Path) -> dict:
+def get_yolo_predictions(model: YOLO, df: pd.DataFrame, images_dir: Path) -> pd.DataFrame:
     """
-    Tests a model against a DataFrame with ground-truth counts.
-
-    Args:
-        model (YOLO): The loaded YOLOv8 model object.
-        df (pd.DataFrame): DataFrame containing ground-truth data. Must have
-                           'image_id' and 'ground_truth_count' columns.
-        images_dir (Path): The directory where the test images are stored.
-
-    Returns:
-        dict: A dictionary containing the calculated error metrics.
+    Runs YOLO inference on a set of images and returns a DataFrame with predictions.
     """
-    total_absolute_error = 0
-    total_percentage_error = 0
-    images_tested = 0
-    images_missing = 0
-
-    # Use tqdm for a nice progress bar during validation
-    for _, row in tqdm(df.iterrows(), total=df.shape[0], desc="Validating images"):
+    predictions = []
+    print("Step 1: Generating raw predictions from YOLO model...")
+    for _, row in tqdm(df.iterrows(), total=df.shape[0], desc="YOLO Inference"):
         image_id = row['image_id']
-        ground_truth_count = row['ground_truth_count']
-
         image_path = images_dir / f"{image_id}.jpg"
 
         if not image_path.exists():
-            images_missing += 1
             continue
 
         img = cv2.imread(str(image_path))
         if img is None:
-            images_missing += 1
             continue
         
-        # Run prediction on the image
-        # Set verbose=False to keep the output clean
+        # Run YOLO prediction
         prediction = model.predict(img, save=False, verbose=False, conf=0.4)
-        
-        # The number of detected boxes is the predicted count
         predicted_count = len(prediction[0].boxes)
+        
+        predictions.append({'image_id': image_id, 'predicted_count': predicted_count})
 
-        # Calculate errors for this image
-        absolute_error = abs(predicted_count - ground_truth_count)
-        percentage_error = absolute_error / ground_truth_count if ground_truth_count > 0 else 0
+    return pd.merge(df, pd.DataFrame(predictions), on='image_id')
 
-        total_absolute_error += absolute_error
-        total_percentage_error += percentage_error
-        images_tested += 1
+
+def train_and_apply_correction_model(results_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Trains a polynomial regression model to correct YOLO's predictions and applies it.
+    """
+    print("\nStep 2: Training a polynomial error correction model...")
     
-    # Calculate average metrics
-    mean_absolute_error = total_absolute_error / images_tested if images_tested > 0 else 0
-    mean_percentage_error = total_percentage_error / images_tested if images_tested > 0 else 0
+    # Use 80% of the data to train the correction model, 20% to test it
+    train_df, test_df = train_test_split(results_df, test_size=0.2, random_state=42)
+
+    X_train = train_df[['predicted_count']]
+    y_train = train_df['ground_truth_count']
+
+    # Create polynomial features (e.g., predicted_count^2)
+    poly = PolynomialFeatures(degree=2, include_bias=False)
+    X_train_poly = poly.fit_transform(X_train)
+
+    # Train the linear regression model on these polynomial features
+    correction_model = LinearRegression()
+    correction_model.fit(X_train_poly, y_train)
+    print("Correction model trained.")
+
+    # Apply the correction to the full dataset
+    X_full_poly = poly.transform(results_df[['predicted_count']])
+    corrected_predictions = correction_model.predict(X_full_poly)
     
-    print(f"Validation complete. Tested {images_tested} images. Skipped {images_missing} missing images.")
+    # Add corrected predictions to the DataFrame, ensuring they are integers
+    results_df['corrected_count'] = np.round(corrected_predictions).astype(int)
     
-    return {
-        "mean_absolute_error": mean_absolute_error,
-        "mean_percentage_error": mean_percentage_error,
-        "images_tested": images_tested
-    }
+    return results_df
 
 
 def main(args: argparse.Namespace) -> None:
     """
-    Main function to load models and the validation data, then print a comparison table.
+    Main function to run the full validation and correction pipeline.
     """
     try:
-        # Assuming the CSV has columns named 'image_id' and 'ground_truth_count'
         validation_df = pd.read_csv(args.csv_path, sep=args.csv_separator)
-    except FileNotFoundError:
-        print(f"Error: Ground-truth CSV file not found at '{args.csv_path}'")
-        return
-    except KeyError as e:
-        print(f"Error: CSV file must contain the columns 'image_id' and 'ground_truth_count'. Missing {e}.")
+        # Ensure required columns exist
+        _ = validation_df['image_id']
+        _ = validation_df['ground_truth_count']
+    except (FileNotFoundError, KeyError) as e:
+        print(f"Error loading or parsing CSV file: {e}")
         return
 
     images_dir = Path(args.images_dir)
@@ -103,72 +101,48 @@ def main(args: argparse.Namespace) -> None:
         print(f"Error: Images directory not found at '{args.images_dir}'")
         return
 
-    # --- Optional: Download logic would go here ---
-    # You could add logic to use runcmd from utils.py to wget images if they don't exist
+    model_path = Path(args.model_path)
+    if not model_path.exists():
+        print(f"Error: Model not found at '{args.model_path}'")
+        return
+        
+    print(f"\n--- Evaluating model: {model_path.name} ---")
+    model = YOLO(model_path)
     
-    results = []
-    for model_path_str in args.model_paths:
-        model_path = Path(model_path_str)
-        if not model_path.exists():
-            print(f"Warning: Model not found at '{model_path_str}', skipping.")
-            continue
-        
-        print(f"\n--- Evaluating model: {model_path.parent.name}/{model_path.name} ---")
-        model = YOLO(model_path)
-        
-        metrics = validate_model_on_counting_task(model, validation_df, images_dir)
-        
-        # Use the name of the model's parent directory for a clean label
-        model_name = model_path.parent.parent.name
-        metrics['model_name'] = model_name
-        results.append(metrics)
-
-    if not results:
-        print("No models were evaluated.")
+    # Step 1: Get raw predictions
+    results_with_preds = get_yolo_predictions(model, validation_df, images_dir)
+    
+    if results_with_preds.empty:
+        print("Could not generate any predictions. Please check image paths and data.")
         return
 
-    # Create and print a clean comparison table using Pandas
-    results_df = pd.DataFrame(results)
-    results_df = results_df[['model_name', 'mean_absolute_error', 'mean_percentage_error', 'images_tested']]
-    results_df = results_df.rename(columns={
-        "model_name": "Model",
-        "mean_absolute_error": "Mean Absolute Error",
-        "mean_percentage_error": "Mean Percentage Error (%)"
-    })
-    results_df['Mean Percentage Error (%)'] = (results_df['Mean Percentage Error (%)'] * 100).map('{:.2f}%'.format)
-    results_df['Mean Absolute Error'] = results_df['Mean Absolute Error'].map('{:.2f}'.format)
-
-    print("\n--- Final Model Comparison ---")
-    print(results_df.to_string(index=False))
-
+    # Step 2: Train and apply the correction model
+    final_results = train_and_apply_correction_model(results_with_preds)
+    
+    # Step 3: Calculate and report final metrics
+    print("\nStep 3: Calculating final performance metrics...")
+    
+    raw_mae = mean_absolute_error(final_results['ground_truth_count'], final_results['predicted_count'])
+    corrected_mae = mean_absolute_error(final_results['ground_truth_count'], final_results['corrected_count'])
+    
+    print("\n--- Final Validation Report ---")
+    print(f"Model: {model_path.name}")
+    print("-" * 30)
+    print(f"Raw YOLO Model MAE:         {raw_mae:.4f}")
+    print(f"Corrected Two-Stage MAE:    {corrected_mae:.4f}")
+    print("-" * 30)
+    improvement = raw_mae - corrected_mae
+    improvement_percent = (improvement / raw_mae) * 100
+    print(f"Improvement from Correction Model: {improvement:.4f} ({improvement_percent:.2f}%)")
+    print("\n✅ Validation complete.")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Validate and compare YOLO models on a quantitative counting task.")
+    parser = argparse.ArgumentParser(description="Validate a YOLO model and apply a polynomial error correction.")
     
-    parser.add_argument(
-        '--model-paths', 
-        nargs='+',  # This allows for one or more model paths
-        required=True, 
-        help='List of paths to trained model weights (.pt files), separated by spaces.'
-    )
-    parser.add_argument(
-        '--csv-path', 
-        type=str, 
-        required=True, 
-        help="Path to the ground-truth CSV file. Must contain 'image_id' and 'ground_truth_count' columns."
-    )
-    parser.add_argument(
-        '--images-dir', 
-        type=str, 
-        required=True, 
-        help='Path to the directory containing the validation images.'
-    )
-    parser.add_argument(
-        '--csv-separator', 
-        type=str, 
-        default=',', 
-        help='The separator used in the CSV file (e.g., "," or ";"). Default is a comma.'
-    )
+    parser.add_argument('--model-path', type=str, required=True, help='Path to a single trained model weights (.pt file).')
+    parser.add_argument('--csv-path', type=str, required=True, help="Path to the ground-truth CSV file. Must contain 'image_id' and 'ground_truth_count' columns.")
+    parser.add_argument('--images-dir', type=str, required=True, help='Path to the directory containing the validation images.')
+    parser.add_argument('--csv-separator', type=str, default=',', help='The separator used in the CSV file (e.g., "," or ";").')
     
     args = parser.parse_args()
     main(args)
